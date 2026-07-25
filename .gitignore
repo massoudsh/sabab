@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+
+# Backend data (آپلودهای کاربر، نباید در گیت باشد)
+backend/data/*.pkl
+backend/data/manifest.json
+
+# Env
+.env
+.env.*
+
+# OS/editor
+.DS_Store
+*.swp

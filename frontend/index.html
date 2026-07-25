@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>چرا — دستیار تحلیل داده</title>
+<link rel="stylesheet" href="style.css" />
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="logo">چرا</span>
+        <span class="tagline">AI Data-to-Decision Copilot</span>
+      </div>
+
+      <div class="upload-box">
+        <label for="file-input" class="upload-label">
+          + آپلود فایل CSV یا Excel
+        </label>
+        <input type="file" id="file-input" accept=".csv,.tsv,.xlsx,.xls" hidden />
+        <div id="upload-status" class="upload-status"></div>
+      </div>
+
+      <div class="dataset-list-title">دیتاست‌های شما</div>
+      <ul id="dataset-list" class="dataset-list"></ul>
+
+      <div id="dataset-detail" class="dataset-detail"></div>
+    </aside>
+
+    <main class="chat">
+      <div id="messages" class="messages">
+        <div class="msg bot">
+          <div class="bubble">
+            سلام! من «چرا» هستم — دستیار تحلیل داده. اول یک فایل CSV یا Excel آپلود کن،
+            بعد هر سؤالی دربارهٔ داده‌ات به فارسی بپرس؛ مثلاً:
+            <br />«مجموع فروش به تفکیک محصول چقدر است؟»
+            <br />«چرا فروش افت کرد؟»
+            <br />«روند فروش چطور بوده؟»
+          </div>
+        </div>
+      </div>
+
+      <form id="ask-form" class="ask-form">
+        <input
+          type="text"
+          id="question-input"
+          placeholder="سؤالت را دربارهٔ داده بپرس..."
+          autocomplete="off"
+        />
+        <button type="submit">پرسیدن</button>
+      </form>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
