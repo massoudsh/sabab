@@ -41,3 +41,12 @@ class AskResponse(BaseModel):
     answer: str
     table: Optional[list[dict[str, Any]]] = None
     chart: Optional[ChartData] = None
+
+
+class Insight(BaseModel):
+    type: str
+    severity: str
+    narrative: str
+    metric_col: Optional[str] = None
+    group_col: Optional[str] = None
+    chart: Optional[ChartData] = None

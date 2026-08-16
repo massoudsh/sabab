@@ -64,7 +64,55 @@ async function selectDataset(id) {
     );
   } catch (err) {
     addBotMessage("خطا در دریافت جزئیات دیتاست: " + err.message, true);
+    return;
   }
+  loadInsights(id);
+}
+
+// --- Insights (موتور بینش خودکار) ---
+async function loadInsights(id) {
+  try {
+    const list = await api(`/api/datasets/${id}/insights`);
+    if (id !== state.currentDatasetId || list.length === 0) return;
+    renderInsightsMessage(list);
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+function renderInsightsMessage(list) {
+  const wrap = document.createElement("div");
+  wrap.className = "msg bot";
+
+  const content = document.createElement("div");
+  content.className = "msg-content";
+
+  const bubble = document.createElement("div");
+  bubble.className = "bubble insights-bubble";
+  const title = document.createElement("div");
+  title.className = "insights-title";
+  title.textContent = "یافته‌های خودکار:";
+  bubble.appendChild(title);
+
+  const ul = document.createElement("ul");
+  ul.className = "insights-list";
+  for (const insight of list) {
+    const li = document.createElement("li");
+    li.className = "insight-item severity-" + insight.severity;
+    li.textContent = insight.narrative;
+    ul.appendChild(li);
+  }
+  bubble.appendChild(ul);
+  content.appendChild(bubble);
+
+  const chartable = list.find((i) => i.chart && i.chart.labels && i.chart.labels.length > 0);
+  if (chartable) {
+    content.appendChild(renderChart(chartable.chart));
+  }
+
+  wrap.appendChild(content);
+  el.messages.appendChild(wrap);
+  scrollToBottom();
 }
 
 function renderDatasetDetail(detail) {

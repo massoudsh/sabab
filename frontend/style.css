@@ -281,3 +281,32 @@ table.data-table th {
   color: var(--muted);
   font-size: 13px;
 }
+
+/* Insights (موتور بینش خودکار) */
+.insights-bubble {
+  border-color: var(--accent-2) !important;
+  white-space: normal;
+}
+
+.insights-title {
+  font-weight: 700;
+  margin-bottom: 8px;
+  color: var(--accent-2);
+}
+
+.insights-list {
+  margin: 0;
+  padding-inline-start: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.insight-item {
+  font-size: 13.5px;
+  line-height: 1.8;
+}
+
+.insight-item.severity-warning {
+  color: #ffb84d;
+}

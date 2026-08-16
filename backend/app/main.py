@@ -6,8 +6,8 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from . import analytics, datastore, nlu
-from .schemas import AskRequest, AskResponse, DatasetDetail, DatasetMeta
+from . import analytics, datastore, insights, nlu
+from .schemas import AskRequest, AskResponse, DatasetDetail, DatasetMeta, Insight
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent.parent / "frontend"
 
@@ -53,6 +53,15 @@ def get_dataset(dataset_id: str):
     df = datastore.load_dataframe(dataset_id)
     desc = analytics.describe(df)
     return {**meta, "preview": desc["preview"], "numeric_columns": desc["numeric_columns"], "date_columns": desc["date_columns"]}
+
+
+@app.get("/api/datasets/{dataset_id}/insights", response_model=list[Insight])
+def get_insights(dataset_id: str):
+    meta = datastore.get_meta(dataset_id)
+    if not meta:
+        raise HTTPException(status_code=404, detail="دیتاست پیدا نشد.")
+    df = datastore.load_dataframe(dataset_id)
+    return insights.generate_insights(df)
 
 
 @app.delete("/api/datasets/{dataset_id}")
