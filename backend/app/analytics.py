@@ -199,6 +199,25 @@ def describe(df: pd.DataFrame) -> dict:
     }
 
 
+def forecast_by_period(df: pd.DataFrame, metric_col: str, date_col: str, periods: int = 3) -> dict:
+    if metric_col not in df.columns or date_col not in df.columns:
+        return {"ok": False, "reason": "ستون سنجه یا تاریخ پیدا نشد."}
+    d = df.copy()
+    d["__date__"] = as_datetime(d, date_col)
+    d = d.dropna(subset=["__date__", metric_col])
+    d["__period__"] = d["__date__"].apply(jalali.to_period_label)
+    grouped = d.groupby("__period__")[metric_col].sum().sort_index()
+    if len(grouped) < 2:
+        return {"ok": False, "reason": "برای پیش‌بینی حداقل دو دورهٔ زمانی لازم است."}
+    values = [float(value) for value in grouped.values]
+    x = pd.Series(range(len(values)), dtype=float)
+    y = pd.Series(values, dtype=float)
+    slope = float(x.cov(y) / x.var())
+    intercept = float(y.mean() - slope * x.mean())
+    future = [round(intercept + slope * (len(values) + index), 2) for index in range(periods)]
+    return {"ok": True, "labels": [f"دورهٔ بعد {index + 1}" for index in range(periods)], "series": [{"name": "پیش‌بینی", "data": future}], "slope": slope, "history": values}
+
+
 def _fmt(value: float) -> str:
     if value is None:
         return "-"

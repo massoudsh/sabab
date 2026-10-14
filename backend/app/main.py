@@ -6,8 +6,18 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from . import analytics, datastore, insights, nlu
-from .schemas import AskRequest, AskResponse, DatasetDetail, DatasetMeta, Insight
+from . import analytics, datastore, insights, nlu, workspace
+from .schemas import (
+    AlertCreate,
+    AskRequest,
+    AskResponse,
+    CommentCreate,
+    ConnectionCreate,
+    DashboardCreate,
+    DatasetDetail,
+    DatasetMeta,
+    Insight,
+)
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent.parent / "frontend"
 
@@ -28,6 +38,111 @@ app.add_middleware(
 @app.get("/api/health")
 def health():
     return {"status": "ok"}
+
+
+def _require_dataset(dataset_id: str) -> tuple[dict, object]:
+    meta = datastore.get_meta(dataset_id)
+    if not meta:
+        raise HTTPException(status_code=404, detail="دیتاست پیدا نشد.")
+    return meta, datastore.load_dataframe(dataset_id)
+
+
+@app.get("/api/connections")
+def list_connections():
+    return workspace.list_records("connections")
+
+
+@app.post("/api/connections")
+def create_connection(payload: ConnectionCreate):
+    meta = datastore.get_meta(payload.dataset_id)
+    if not meta:
+        raise HTTPException(status_code=404, detail="دیتاست پیدا نشد.")
+    return workspace.add_record("connections", payload.model_dump())
+
+
+@app.post("/api/connections/{connection_id}/sync")
+def sync_connection(connection_id: str):
+    connection = next((item for item in workspace.list_records("connections") if item["id"] == connection_id), None)
+    if not connection:
+        raise HTTPException(status_code=404, detail="اتصال پیدا نشد.")
+    meta = datastore.get_meta(connection["dataset_id"])
+    if not meta:
+        raise HTTPException(status_code=404, detail="دیتاست منبع پیدا نشد.")
+    return {"ok": True, "connection": connection, "synced_at": meta["uploaded_at"], "rows": meta["rows"]}
+
+
+@app.get("/api/dashboards")
+def list_dashboards():
+    return workspace.list_records("dashboards")
+
+
+@app.post("/api/dashboards")
+def create_dashboard(payload: DashboardCreate):
+    _require_dataset(payload.dataset_id)
+    return workspace.add_record("dashboards", payload.model_dump())
+
+
+@app.delete("/api/dashboards/{dashboard_id}")
+def delete_dashboard(dashboard_id: str):
+    if not workspace.delete_record("dashboards", dashboard_id):
+        raise HTTPException(status_code=404, detail="داشبورد پیدا نشد.")
+    return {"ok": True}
+
+
+@app.get("/api/alerts")
+def list_alerts():
+    alerts = []
+    for alert in workspace.list_records("alerts"):
+        try:
+            _, df = _require_dataset(alert["dataset_id"])
+            value = analytics.aggregate_column(df, alert["metric_col"], "mean")
+            triggered = value is not None and ((alert["direction"] == "below" and value < alert["threshold"]) or (alert["direction"] == "above" and value > alert["threshold"]))
+            alerts.append({**alert, "current_value": value, "triggered": triggered})
+        except (KeyError, datastore.DatasetError):
+            alerts.append({**alert, "current_value": None, "triggered": False})
+    return alerts
+
+
+@app.post("/api/alerts")
+def create_alert(payload: AlertCreate):
+    _, df = _require_dataset(payload.dataset_id)
+    if payload.metric_col not in analytics.numeric_columns(df):
+        raise HTTPException(status_code=400, detail="ستون هشدار باید عددی باشد.")
+    if payload.direction not in ("below", "above"):
+        raise HTTPException(status_code=400, detail="جهت هشدار باید above یا below باشد.")
+    return workspace.add_record("alerts", payload.model_dump())
+
+
+@app.delete("/api/alerts/{alert_id}")
+def delete_alert(alert_id: str):
+    if not workspace.delete_record("alerts", alert_id):
+        raise HTTPException(status_code=404, detail="هشدار پیدا نشد.")
+    return {"ok": True}
+
+
+@app.get("/api/datasets/{dataset_id}/forecast")
+def forecast(dataset_id: str, metric_col: str, date_col: str, periods: int = 3):
+    _, df = _require_dataset(dataset_id)
+    if periods < 1 or periods > 12:
+        raise HTTPException(status_code=400, detail="تعداد دوره‌های پیش‌بینی باید بین ۱ تا ۱۲ باشد.")
+    result = analytics.forecast_by_period(df, metric_col, date_col, periods)
+    if not result["ok"]:
+        raise HTTPException(status_code=400, detail=result["reason"])
+    return result
+
+
+@app.get("/api/comments")
+def list_comments(dataset_id: str | None = None):
+    comments = workspace.list_records("comments")
+    return [comment for comment in comments if not dataset_id or comment["dataset_id"] == dataset_id]
+
+
+@app.post("/api/comments")
+def create_comment(payload: CommentCreate):
+    _require_dataset(payload.dataset_id)
+    if not payload.body.strip() or not payload.author.strip():
+        raise HTTPException(status_code=400, detail="نام و متن کامنت الزامی است.")
+    return workspace.add_record("comments", {**payload.model_dump(), "body": payload.body.strip(), "author": payload.author.strip()})
 
 
 @app.post("/api/datasets/upload", response_model=DatasetMeta)
