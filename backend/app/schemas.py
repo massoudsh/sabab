@@ -50,3 +50,30 @@ class Insight(BaseModel):
     metric_col: Optional[str] = None
     group_col: Optional[str] = None
     chart: Optional[ChartData] = None
+
+
+class ConnectionCreate(BaseModel):
+    name: str
+    kind: str = "file"
+    dataset_id: str
+
+
+class DashboardCreate(BaseModel):
+    name: str
+    dataset_id: str
+    widgets: list[dict[str, Any]] = []
+
+
+class AlertCreate(BaseModel):
+    name: str
+    dataset_id: str
+    metric_col: str
+    threshold: float
+    direction: str = "below"
+
+
+class CommentCreate(BaseModel):
+    dataset_id: str
+    author: str
+    body: str
+    dashboard_id: Optional[str] = None
