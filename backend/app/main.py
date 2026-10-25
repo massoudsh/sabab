@@ -120,6 +120,17 @@ def delete_alert(alert_id: str):
     return {"ok": True}
 
 
+@app.get("/api/datasets/{dataset_id}/kpis")
+def get_kpis(dataset_id: str):
+    _, df = _require_dataset(dataset_id)
+    cards = []
+    for column in analytics.numeric_columns(df)[:8]:
+        value = analytics.aggregate_column(df, column, "sum")
+        average = analytics.aggregate_column(df, column, "mean")
+        cards.append({"name": column, "sum": value, "average": average, "unit": "مقدار"})
+    return cards
+
+
 @app.get("/api/datasets/{dataset_id}/forecast")
 def forecast(dataset_id: str, metric_col: str, date_col: str, periods: int = 3):
     _, df = _require_dataset(dataset_id)

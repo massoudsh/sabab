@@ -1,7 +1,7 @@
 const API_BASE = "";
 const fa = (value) => String(value).replace(/\d/g, (digit) => "۰۱۲۳۴۵۶۷۸۹"[digit]);
 const number = (value) => Number(value || 0).toLocaleString("fa-IR");
-const state = { datasets: [], currentDatasetId: null, currentDetail: null, currentInsights: [] };
+const state = { datasets: [], currentDatasetId: null, currentDetail: null, currentInsights: [], kpis: [], alerts: [], connections: [], comments: [] };
 const titles = { dashboard: "نمای کلی", datasets: "دیتاست‌ها", insights: "بینش‌ها", reports: "گزارش‌ها", settings: "تنظیمات" };
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -28,7 +28,9 @@ function renderFeatureCenter() {
     return;
   }
   target.innerHTML = `<div class="feature-card"><div class="feature-title">اتصال داده <span>↻</span></div><p>این فایل را به‌عنوان منبع دادهٔ قابل همگام‌سازی ثبت کنید.</p><form data-feature="connection"><input name="name" placeholder="نام اتصال" value="${escapeHtml(detail.name)}" required /><button class="secondary-button" type="submit">ثبت اتصال</button></form></div><div class="feature-card"><div class="feature-title">داشبورد تیمی <span>▥</span></div><p>یک نمای تحلیلی قابل اشتراک برای این دیتاست بسازید.</p><form data-feature="dashboard"><input name="name" placeholder="نام داشبورد" required /><button class="secondary-button" type="submit">ذخیره داشبورد</button></form></div><div class="feature-card"><div class="feature-title">هشدار هوشمند <span>!</span></div><p>وقتی میانگین یک شاخص از آستانه عبور کرد، هشدار بسازید.</p><form data-feature="alert"><select name="metric" required>${metrics.map((metric) => `<option value="${escapeHtml(metric)}">${escapeHtml(metric)}</option>`).join("")}</select><input name="threshold" type="number" placeholder="آستانه" required /><select name="direction"><option value="below">کمتر از</option><option value="above">بیشتر از</option></select><button class="secondary-button" type="submit">فعال‌سازی</button></form></div><div class="feature-card"><div class="feature-title">پیش‌بینی روند <span>↗</span></div><p>سه دورهٔ آینده را با روند تاریخی برآورد کنید.</p><form data-feature="forecast"><select name="metric" required>${metrics.map((metric) => `<option value="${escapeHtml(metric)}">${escapeHtml(metric)}</option>`).join("")}</select><select name="date" required>${dates.map((date) => `<option value="${escapeHtml(date)}">${escapeHtml(date)}</option>`).join("")}</select><button class="secondary-button" type="submit">محاسبه</button></form></div><div class="feature-card"><div class="feature-title">همکاری تیمی <span>◌</span></div><p>داشبورد و یادداشت تیمی را برای این دیتاست ذخیره کنید.</p><form data-feature="comment"><input name="author" placeholder="نام شما" required /><input name="body" placeholder="یادداشت کوتاه" required /><button class="secondary-button" type="submit">ثبت یادداشت</button></form></div>`;
+  target.insertAdjacentHTML("beforeend", '<div id="feature-status" class="feature-status" aria-live="polite"></div>');
   target.querySelectorAll("form[data-feature]").forEach((form) => form.addEventListener("submit", handleFeatureSubmit));
+  renderFeatureStatus();
 }
 async function handleFeatureSubmit(event) {
   event.preventDefault();
@@ -48,6 +50,28 @@ async function handleFeatureSubmit(event) {
     showToast("با موفقیت ذخیره شد");
   } catch (error) { showToast(error.message); }
 }
+async function loadFeatureData() {
+  if (!state.currentDatasetId) return;
+  try {
+    const [kpis, alerts, connections, comments] = await Promise.all([
+      api(`/api/datasets/${state.currentDatasetId}/kpis`),
+      api(`/api/alerts`),
+      api(`/api/connections`),
+      api(`/api/comments?dataset_id=${encodeURIComponent(state.currentDatasetId)}`),
+    ]);
+    state.kpis = kpis;
+    state.alerts = alerts.filter((alert) => alert.dataset_id === state.currentDatasetId);
+    state.connections = connections.filter((connection) => connection.dataset_id === state.currentDatasetId);
+    state.comments = comments;
+    renderFeatureStatus();
+  } catch (error) { showToast(error.message); }
+}
+function renderFeatureStatus() {
+  const target = $("#feature-status");
+  if (!target) return;
+  const triggered = state.alerts.filter((alert) => alert.triggered).length;
+  target.innerHTML = `<div><strong>KPIهای پیشنهادی</strong><span>${fa(state.kpis.length)} شاخص قابل‌ردیابی</span></div><div class="${triggered ? "status-warning" : ""}"><strong>هشدارها</strong><span>${triggered ? `${fa(triggered)} هشدار فعال` : "همه‌چیز عادی است"}</span></div><div><strong>اتصال منبع</strong><span>${fa(state.connections.length)} منبع ثبت‌شده</span></div><div><strong>همکاری</strong><span>${fa(state.comments.length)} یادداشت تیمی</span></div>`;
+}
 async function loadDatasets() {
   try { state.datasets = await api("/api/datasets"); renderDatasetList(); renderStats(); renderDatasetsTable(); fillInsightSelect(); if (!state.currentDatasetId && state.datasets[0]) await selectDataset(state.datasets[0].id, false); else if (!state.datasets.length) renderEmptyState(); }
   catch (error) { showToast(error.message); }
@@ -64,7 +88,7 @@ function renderStats() {
 }
 async function selectDataset(id, notify = true) {
   state.currentDatasetId = id; renderDatasetList();
-  try { state.currentDetail = await api(`/api/datasets/${id}`); state.currentInsights = await api(`/api/datasets/${id}/insights`); if (notify) showToast(`دیتاست «${state.currentDetail.name}» انتخاب شد`); renderDashboard(); renderInsightsPage(); renderReport(); }
+  try { state.currentDetail = await api(`/api/datasets/${id}`); state.currentInsights = await api(`/api/datasets/${id}/insights`); if (notify) showToast(`دیتاست «${state.currentDetail.name}» انتخاب شد`); renderDashboard(); renderInsightsPage(); renderReport(); await loadFeatureData(); }
   catch (error) { showToast(error.message); }
 }
 function renderDashboard() {
