@@ -60,15 +60,15 @@ def create_connection(payload: ConnectionCreate):
     return workspace.add_record("connections", payload.model_dump())
 
 
-@app.post("/api/connections/{connection_id}/sync")
-def sync_connection(connection_id: str):
+@app.get("/api/connections/{connection_id}/source")
+def get_connection_source(connection_id: str):
     connection = next((item for item in workspace.list_records("connections") if item["id"] == connection_id), None)
     if not connection:
         raise HTTPException(status_code=404, detail="اتصال پیدا نشد.")
     meta = datastore.get_meta(connection["dataset_id"])
     if not meta:
         raise HTTPException(status_code=404, detail="دیتاست منبع پیدا نشد.")
-    return {"ok": True, "connection": connection, "synced_at": meta["uploaded_at"], "rows": meta["rows"]}
+    return {"connection": connection, "uploaded_at": meta["uploaded_at"], "rows": meta["rows"], "live_sync": False}
 
 
 @app.get("/api/dashboards")
@@ -98,7 +98,7 @@ def list_alerts():
             value = analytics.aggregate_column(df, alert["metric_col"], "mean")
             triggered = value is not None and ((alert["direction"] == "below" and value < alert["threshold"]) or (alert["direction"] == "above" and value > alert["threshold"]))
             alerts.append({**alert, "current_value": value, "triggered": triggered})
-        except (KeyError, datastore.DatasetError):
+        except (KeyError, datastore.DatasetError, HTTPException):
             alerts.append({**alert, "current_value": None, "triggered": False})
     return alerts
 
@@ -158,7 +158,14 @@ def create_comment(payload: CommentCreate):
 
 @app.post("/api/datasets/upload", response_model=DatasetMeta)
 async def upload_dataset(file: UploadFile = File(...)):
-    content = await file.read()
+    content = bytearray()
+    try:
+        while chunk := await file.read(1024 * 1024):
+            if len(content) + len(chunk) > datastore.MAX_FILE_SIZE:
+                raise HTTPException(status_code=413, detail="حجم فایل بیش از سقف مجاز است.")
+            content.extend(chunk)
+    finally:
+        await file.close()
     try:
         meta = datastore.save_upload(file.filename or "upload", content)
     except datastore.DatasetError as exc:
@@ -196,7 +203,7 @@ def delete_dataset(dataset_id: str):
         datastore.delete_dataset(dataset_id)
     except datastore.DatasetError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return {"ok": True}
+    return {"ok": True, "removed": workspace.delete_dataset_records(dataset_id)}
 
 
 @app.post("/api/ask", response_model=AskResponse)

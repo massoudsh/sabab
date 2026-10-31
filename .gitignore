@@ -9,8 +9,8 @@ __pycache__/
 *.egg-info/
 
 # Backend data (آپلودهای کاربر، نباید در گیت باشد)
-backend/data/*.pkl
-backend/data/manifest.json
+backend/data/*
+!backend/data/.gitkeep
 
 # Env
 .env

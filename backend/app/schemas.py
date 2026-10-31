@@ -11,6 +11,8 @@ class DatasetMeta(BaseModel):
     uploaded_at: str
     rows: int
     columns: list[str]
+    truncated: bool = False
+    original_rows: Optional[int] = None
 
 
 class DatasetDetail(DatasetMeta):

@@ -14,6 +14,8 @@ from pathlib import Path
 
 import pandas as pd
 
+from .storage import atomic_json, locked
+
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 MANIFEST_PATH = DATA_DIR / "manifest.json"
@@ -34,8 +36,7 @@ def _load_manifest() -> dict:
 
 
 def _save_manifest(manifest: dict) -> None:
-    with MANIFEST_PATH.open("w", encoding="utf-8") as f:
-        json.dump(manifest, f, ensure_ascii=False, indent=2)
+    atomic_json(MANIFEST_PATH, manifest)
 
 
 def _read_tabular(filename: str, content: bytes) -> pd.DataFrame:
@@ -54,7 +55,7 @@ def _read_tabular(filename: str, content: bytes) -> pd.DataFrame:
         try:
             return pd.read_excel(buf)
         except Exception as exc:  # noqa: BLE001
-            raise DatasetError(f"خواندن فایل اکسل ممکن نشد: {exc}") from exc
+            raise DatasetError("خواندن فایل اکسل ممکن نشد؛ قالب و سلامت فایل را بررسی کنید.") from exc
     raise DatasetError("فرمت فایل پشتیبانی نمی‌شود. فقط CSV یا Excel (xlsx) مجاز است.")
 
 
@@ -65,10 +66,22 @@ def save_upload(filename: str, content: bytes) -> dict:
     df = _read_tabular(filename, content)
     if df.empty:
         raise DatasetError("فایل خالی است یا هیچ سطر معتبری ندارد.")
+    original_rows = len(df)
     if df.shape[0] > MAX_ROWS:
         df = df.head(MAX_ROWS)
 
-    df.columns = [str(c).strip() for c in df.columns]
+    names = []
+    used = set()
+    for column in df.columns:
+        base = str(column).strip() or "ستون"
+        name = base
+        suffix = 2
+        while name in used:
+            name = f"{base}_{suffix}"
+            suffix += 1
+        used.add(name)
+        names.append(name)
+    df.columns = names
 
     dataset_id = uuid.uuid4().hex[:12]
     store_path = DATA_DIR / f"{dataset_id}.pkl"
@@ -80,11 +93,14 @@ def save_upload(filename: str, content: bytes) -> dict:
         "uploaded_at": datetime.now(timezone.utc).isoformat(),
         "rows": int(df.shape[0]),
         "columns": list(df.columns),
+        "original_rows": original_rows,
+        "truncated": original_rows > MAX_ROWS,
     }
 
-    manifest = _load_manifest()
-    manifest[dataset_id] = meta
-    _save_manifest(manifest)
+    with locked(MANIFEST_PATH):
+        manifest = _load_manifest()
+        manifest[dataset_id] = meta
+        _save_manifest(manifest)
     return meta
 
 
@@ -108,11 +124,12 @@ def load_dataframe(dataset_id: str) -> pd.DataFrame:
 
 
 def delete_dataset(dataset_id: str) -> None:
-    manifest = _load_manifest()
-    if dataset_id not in manifest:
-        raise DatasetError("دیتاست پیدا نشد.")
-    del manifest[dataset_id]
-    _save_manifest(manifest)
+    with locked(MANIFEST_PATH):
+        manifest = _load_manifest()
+        if dataset_id not in manifest:
+            raise DatasetError("دیتاست پیدا نشد.")
+        del manifest[dataset_id]
+        _save_manifest(manifest)
     store_path = DATA_DIR / f"{dataset_id}.pkl"
     if store_path.exists():
         store_path.unlink()
