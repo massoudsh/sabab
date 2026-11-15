@@ -25,6 +25,37 @@ python3 -m venv .venv
 سپس مرورگر را باز کن: **http://localhost:8000** — همان صفحه هم رابط چت است و
 هم به API متصل است (چون فرانت‌اند از همین بک‌اند سرو می‌شود).
 
+## اجرا با Docker (روش پیشنهادی)
+
+```bash
+cp .env.example .env          # در صورت نیاز پورت میزبان را تغییر بده
+docker compose up -d --build
+```
+
+- رابط برنامه: **http://localhost:8000**
+- لندینگ‌پیج: **http://localhost:8000/landing**
+- سلامت سرویس: **http://localhost:8000/api/health**
+
+داده‌های آپلودی در volume نام‌دار `chera-data` (مسیر `/app/backend/data` داخل
+کانتینر) نگه داشته می‌شوند و با `docker compose down` از بین نمی‌روند.
+
+```bash
+docker compose logs -f app        # مشاهدهٔ لاگ
+docker compose down               # توقف (داده حفظ می‌شود)
+docker compose down -v            # توقف و حذف کامل داده‌ها
+```
+
+پشتیبان‌گیری از داده‌ها:
+
+```bash
+docker run --rm -v chera-data:/data -v "$PWD":/backup alpine \
+  tar czf /backup/chera-data-backup.tar.gz -C /data .
+```
+
+کانتینر با کاربر غیر root اجرا می‌شود و `HEALTHCHECK` روی `/api/health` تنظیم
+شده است. برای استقرار روی سرور، پورت ۸۰۰۰ را پشت reverse proxy با HTTPS قرار
+بده.
+
 ### تست‌ها
 
 ```bash

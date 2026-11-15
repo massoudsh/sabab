@@ -20,6 +20,7 @@ from .schemas import (
 )
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent.parent / "frontend"
+LANDING_DIR = Path(__file__).resolve().parent.parent.parent / "landing"
 
 app = FastAPI(
     title="چرا (Chera) — AI Data-to-Decision Copilot",
@@ -289,6 +290,10 @@ def ask(payload: AskRequest):
     )
     return AskResponse(ok=False, intent="fallback", answer=answer)
 
+
+# لندینگ‌پیج استاتیک (اختیاری) در /landing سرو می‌شود؛ باید پیش از mount ریشه ثبت شود.
+if LANDING_DIR.exists():
+    app.mount("/landing", StaticFiles(directory=str(LANDING_DIR), html=True), name="landing")
 
 # فرانت‌اند استاتیک (بدون build) را از همین بک‌اند سرو می‌کند تا نیازی به تنظیم
 # آدرس/CORS جداگانه برای اجرای محلی نباشد. باید بعد از همه‌ی مسیرهای /api بیاید.
