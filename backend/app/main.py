@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
@@ -28,12 +29,17 @@ app = FastAPI(
     version="0.1.0",
 )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# فرانت‌اند از همین اپ سرو می‌شود؛ پس به CORS نیاز ندارد. فقط اگر می‌خواهید
+# دامنه‌ی جداگانه‌ای به API دسترسی داشته باشد، آن را در CHERA_ALLOWED_ORIGINS
+# (با کاما جدا شده) تعریف کنید. پیش‌فرض امن: هیچ origin خارجی مجاز نیست.
+ALLOWED_ORIGINS = [origin.strip() for origin in os.environ.get("CHERA_ALLOWED_ORIGINS", "").split(",") if origin.strip()]
+if ALLOWED_ORIGINS:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=ALLOWED_ORIGINS,
+        allow_methods=["GET", "POST", "DELETE"],
+        allow_headers=["Content-Type"],
+    )
 
 
 @app.get("/api/health")

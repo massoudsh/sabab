@@ -1,7 +1,11 @@
 const API_BASE = "";
-const fa = (value) => String(value).replace(/\d/g, (digit) => "۰۱۲۳۴۵۶۷۸۹"[digit]);
-const number = (value) => Number(value || 0).toLocaleString("fa-IR");
-const state = { datasets: [], currentDatasetId: null, currentDetail: null, currentInsights: [], kpis: [], alerts: [], connections: [], comments: [] };
+const SETTINGS_KEY = "chera-settings";
+const settings = { persianDigits: true, autoInsights: true, reduceMotion: false };
+try { Object.assign(settings, JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}")); } catch (error) { /* تنظیمات ذخیره‌شده معتبر نیست؛ پیش‌فرض‌ها استفاده می‌شوند */ }
+const fa = (value) => { const text = String(value); return settings.persianDigits ? text.replace(/\d/g, (digit) => "۰۱۲۳۴۵۶۷۸۹"[digit]) : text; };
+const number = (value) => { const numeric = Number(value || 0); return settings.persianDigits ? numeric.toLocaleString("fa-IR") : numeric.toLocaleString("en-US"); };
+const formatDate = (value) => { if (!value) return "—"; const date = new Date(value); if (Number.isNaN(date.getTime())) return "—"; try { return new Intl.DateTimeFormat("fa-IR", { dateStyle: "medium" }).format(date); } catch (error) { return fa(String(value).slice(0, 10)); } };
+const state = { datasets: [], currentDatasetId: null, currentDetail: null, currentInsights: [], kpis: [], alerts: [], allAlerts: [], connections: [], comments: [], dashboards: [] };
 const titles = { dashboard: "نمای کلی", datasets: "دیتاست‌ها", insights: "بینش‌ها", reports: "گزارش‌ها", settings: "تنظیمات" };
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -30,44 +34,97 @@ function renderFeatureCenter() {
     target.innerHTML = '<div class="feature-card muted-feature"><strong>منبع داده (فایل)، هشدار و پیش‌بینی</strong><span>برای فعال‌سازی قابلیت‌های حرفه‌ای، ابتدا یک دیتاست اضافه کنید.</span></div>';
     return;
   }
-  target.innerHTML = `<div class="feature-card"><div class="feature-title">منبع داده (فایل) <span>↻</span></div><p>این فایل را به‌عنوان منبع ثبت کنید؛ اتصال زنده و همگام‌سازی خودکار فعال نیست.</p><form data-feature="connection"><input name="name" placeholder="نام اتصال" value="${escapeHtml(detail.name)}" required /><button class="secondary-button" type="submit">ثبت اتصال</button></form></div><div class="feature-card"><div class="feature-title">داشبورد تیمی <span>▥</span></div><p>یک نمای تحلیلی قابل اشتراک برای این دیتاست بسازید.</p><form data-feature="dashboard"><input name="name" placeholder="نام داشبورد" required /><button class="secondary-button" type="submit">ذخیره داشبورد</button></form></div><div class="feature-card"><div class="feature-title">هشدار هوشمند <span>!</span></div><p>وقتی میانگین یک شاخص از آستانه عبور کرد، هشدار بسازید.</p><form data-feature="alert"><select name="metric" required>${metrics.map((metric) => `<option value="${escapeHtml(metric)}">${escapeHtml(metric)}</option>`).join("")}</select><input name="threshold" type="number" placeholder="آستانه" required /><select name="direction"><option value="below">کمتر از</option><option value="above">بیشتر از</option></select><button class="secondary-button" type="submit">فعال‌سازی</button></form></div><div class="feature-card"><div class="feature-title">پیش‌بینی روند <span>↗</span></div><p>سه دورهٔ آینده را با روند تاریخی برآورد کنید.</p><form data-feature="forecast"><select name="metric" required>${metrics.map((metric) => `<option value="${escapeHtml(metric)}">${escapeHtml(metric)}</option>`).join("")}</select><select name="date" required>${dates.map((date) => `<option value="${escapeHtml(date)}">${escapeHtml(date)}</option>`).join("")}</select><button class="secondary-button" type="submit">محاسبه</button></form></div><div class="feature-card"><div class="feature-title">همکاری تیمی <span>◌</span></div><p>داشبورد و یادداشت تیمی را برای این دیتاست ذخیره کنید.</p><form data-feature="comment"><input name="author" placeholder="نام شما" required /><input name="body" placeholder="یادداشت کوتاه" required /><button class="secondary-button" type="submit">ثبت یادداشت</button></form></div>`;
+  const dashboardList = state.dashboards.length
+    ? state.dashboards.map((dashboard) => `<li><span class="feature-list-name">${escapeHtml(dashboard.name)}</span><button class="danger-button" type="button" data-delete-dashboard="${escapeHtml(dashboard.id)}">حذف</button></li>`).join("")
+    : '<li class="feature-list-empty">داشبوردی ذخیره نشده است</li>';
+  target.innerHTML = `<div class="feature-card"><div class="feature-title">منبع داده (فایل) <span>↻</span></div><p>این فایل را به‌عنوان منبع ثبت کنید؛ اتصال زنده و همگام‌سازی خودکار فعال نیست.</p><form data-feature="connection"><input name="name" placeholder="نام اتصال" value="${escapeHtml(detail.name)}" required /><button class="secondary-button" type="submit">ثبت اتصال</button></form></div><div class="feature-card"><div class="feature-title">داشبورد تیمی <span>▥</span></div><p>یک نمای تحلیلی قابل اشتراک برای این دیتاست بسازید.</p><form data-feature="dashboard"><input name="name" placeholder="نام داشبورد" required /><button class="secondary-button" type="submit">ذخیره داشبورد</button></form><ul class="feature-list">${dashboardList}</ul></div><div class="feature-card"><div class="feature-title">هشدار هوشمند <span>!</span></div><p>وقتی میانگین یک شاخص از آستانه عبور کرد، هشدار بسازید.</p><form data-feature="alert"><select name="metric" required>${metrics.map((metric) => `<option value="${escapeHtml(metric)}">${escapeHtml(metric)}</option>`).join("")}</select><input name="threshold" type="number" placeholder="آستانه" required /><select name="direction"><option value="below">کمتر از</option><option value="above">بیشتر از</option></select><button class="secondary-button" type="submit">فعال‌سازی</button></form></div><div class="feature-card"><div class="feature-title">پیش‌بینی روند <span>↗</span></div><p>سه دورهٔ آینده را با روند تاریخی برآورد کنید.</p><form data-feature="forecast"><select name="metric" required>${metrics.map((metric) => `<option value="${escapeHtml(metric)}">${escapeHtml(metric)}</option>`).join("")}</select><select name="date" required>${dates.map((date) => `<option value="${escapeHtml(date)}">${escapeHtml(date)}</option>`).join("")}</select><button class="secondary-button" type="submit">محاسبه</button></form><div class="feature-result" id="forecast-result" hidden></div></div><div class="feature-card"><div class="feature-title">همکاری تیمی <span>◌</span></div><p>داشبورد و یادداشت تیمی را برای این دیتاست ذخیره کنید.</p><form data-feature="comment"><input name="author" placeholder="نام شما" required /><input name="body" placeholder="یادداشت کوتاه" required /><button class="secondary-button" type="submit">ثبت یادداشت</button></form></div>`;
   target.insertAdjacentHTML("beforeend", '<div id="feature-status" class="feature-status" aria-live="polite"></div>');
   target.querySelectorAll("form[data-feature]").forEach((form) => form.addEventListener("submit", handleFeatureSubmit));
+  target.querySelectorAll("[data-delete-dashboard]").forEach((button) => button.addEventListener("click", () => deleteDashboard(button.dataset.deleteDashboard)));
   renderFeatureStatus();
 }
 async function handleFeatureSubmit(event) {
   event.preventDefault();
   const form = event.currentTarget;
   const values = Object.fromEntries(new FormData(form));
+  const kind = form.dataset.feature;
   try {
-    if (form.dataset.feature === "connection") await api("/api/connections", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: values.name, dataset_id: state.currentDatasetId, kind: "file" }) });
-    if (form.dataset.feature === "dashboard") await api("/api/dashboards", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: values.name, dataset_id: state.currentDatasetId, widgets: ["overview", "insights", "forecast"] }) });
-    if (form.dataset.feature === "alert") await api("/api/alerts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: `هشدار ${values.metric}`, dataset_id: state.currentDatasetId, metric_col: values.metric, threshold: Number(values.threshold), direction: values.direction }) });
-    if (form.dataset.feature === "comment") await api("/api/comments", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dataset_id: state.currentDatasetId, author: values.author, body: values.body }) });
-    if (form.dataset.feature === "forecast") {
+    if (kind === "connection") await api("/api/connections", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: values.name, dataset_id: state.currentDatasetId, kind: "file" }) });
+    if (kind === "dashboard") await api("/api/dashboards", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: values.name, dataset_id: state.currentDatasetId, widgets: ["overview", "insights", "forecast"] }) });
+    if (kind === "alert") await api("/api/alerts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: `هشدار ${values.metric}`, dataset_id: state.currentDatasetId, metric_col: values.metric, threshold: Number(values.threshold), direction: values.direction }) });
+    if (kind === "comment") await api("/api/comments", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dataset_id: state.currentDatasetId, author: values.author, body: values.body }) });
+    if (kind === "forecast") {
       const result = await api(`/api/datasets/${state.currentDatasetId}/forecast?metric_col=${encodeURIComponent(values.metric)}&date_col=${encodeURIComponent(values.date)}&periods=3`);
-      const forecast = result.series[0].data.map((value, index) => `دورهٔ بعد ${fa(index + 1)}: ${number(value)}`).join("، ");
-      showToast(`پیش‌بینی آماده شد: ${forecast}`);
+      renderForecastResult(result, values.metric);
       return;
     }
+    form.reset();
     showToast("با موفقیت ذخیره شد");
+    await loadFeatureData();
+    renderFeatureCenter();
+  } catch (error) { showToast(error.message); }
+}
+function renderForecastResult(result, metric) {
+  const target = $("#forecast-result");
+  if (!target) return;
+  const forecast = result.series[0].data.map((value, index) => `دورهٔ ${fa(index + 1)}: ${number(value)}`).join("، ");
+  target.hidden = false;
+  target.className = "feature-result";
+  target.innerHTML = `<strong>پیش‌بینی «${escapeHtml(metric)}»</strong><div>${forecast}</div><div class="feature-result-chart" id="forecast-chart"></div>`;
+  const chart = { type: "line", labels: result.labels, series: result.series };
+  renderChart(chart, $("#forecast-chart"));
+}
+async function deleteDataset(id) {
+  const dataset = state.datasets.find((item) => item.id === id);
+  if (!window.confirm(`دیتاست «${dataset?.name || id}» و همهٔ تحلیل‌های مرتبط با آن حذف شود؟`)) return;
+  try {
+    await api(`/api/datasets/${encodeURIComponent(id)}`, { method: "DELETE" });
+    if (state.currentDatasetId === id) {
+      state.currentDatasetId = null;
+      state.currentDetail = null;
+      state.currentInsights = [];
+      state.kpis = []; state.alerts = []; state.connections = []; state.comments = []; state.dashboards = [];
+    }
+    showToast("دیتاست حذف شد");
+    await loadDatasets();
+    renderDashboard(); renderInsightsPage(); renderReport();
+  } catch (error) { showToast(error.message); }
+}
+async function deleteDashboard(id) {
+  if (!window.confirm("این داشبورد حذف شود؟")) return;
+  try {
+    await api(`/api/dashboards/${encodeURIComponent(id)}`, { method: "DELETE" });
+    showToast("داشبورد حذف شد");
+    await loadFeatureData();
+    renderFeatureCenter();
   } catch (error) { showToast(error.message); }
 }
 async function loadFeatureData() {
   if (!state.currentDatasetId) return;
   try {
-    const [kpis, alerts, connections, comments] = await Promise.all([
+    const [kpis, alerts, connections, comments, dashboards] = await Promise.all([
       api(`/api/datasets/${state.currentDatasetId}/kpis`),
       api(`/api/alerts`),
       api(`/api/connections`),
       api(`/api/comments?dataset_id=${encodeURIComponent(state.currentDatasetId)}`),
+      api(`/api/dashboards`),
     ]);
     state.kpis = kpis;
+    state.allAlerts = alerts;
     state.alerts = alerts.filter((alert) => alert.dataset_id === state.currentDatasetId);
     state.connections = connections.filter((connection) => connection.dataset_id === state.currentDatasetId);
     state.comments = comments;
+    state.dashboards = dashboards.filter((dashboard) => dashboard.dataset_id === state.currentDatasetId);
     renderFeatureStatus();
+    renderNotificationDot();
   } catch (error) { showToast(error.message); }
+}
+function renderNotificationDot() {
+  const dot = $("#notification-dot");
+  if (!dot) return;
+  const triggered = state.allAlerts.filter((alert) => alert.triggered).length;
+  dot.classList.toggle("hidden", triggered === 0);
+  dot.dataset.count = String(triggered);
 }
 function renderFeatureStatus() {
   const target = $("#feature-status");
@@ -91,7 +148,15 @@ function renderStats() {
 }
 async function selectDataset(id, notify = true) {
   state.currentDatasetId = id; renderDatasetList();
-  try { state.currentDetail = await api(`/api/datasets/${id}`); state.currentInsights = await api(`/api/datasets/${id}/insights`); if (notify) showToast(`دیتاست «${state.currentDetail.name}» انتخاب شد`); renderDashboard(); renderInsightsPage(); renderReport(); await loadFeatureData(); }
+  try {
+    state.currentDetail = await api(`/api/datasets/${id}`);
+    state.currentInsights = settings.autoInsights ? await api(`/api/datasets/${id}/insights`) : [];
+    if (notify) showToast(`دیتاست «${state.currentDetail.name}» انتخاب شد`);
+    renderDashboard(); renderInsightsPage(); renderReport(); await loadFeatureData();
+  } catch (error) { showToast(error.message); }
+}
+async function loadInsights(id) {
+  try { state.currentInsights = await api(`/api/datasets/${id}/insights`); renderInsightsPage(); }
   catch (error) { showToast(error.message); }
 }
 function renderDashboard() {
@@ -105,14 +170,31 @@ function insightClass(insight) { return insight.severity === "warning" ? "warnin
 function insightLabel(type) { return ({ trend: "روند", concentration: "تمرکز", outlier: "دادهٔ متفاوت", quality: "کیفیت داده" })[type] || "بینش خودکار"; }
 function renderInsightStack(target, insights) { target.innerHTML = insights.length ? insights.map((insight) => `<div class="insight-item ${insightClass(insight)}"><span class="insight-type">${insightLabel(insight.type)}</span>${escapeHtml(insight.narrative)}</div>`).join("") : '<div class="empty-chat"><div><strong>بینشی برای نمایش نیست</strong><span>یک دیتاست معتبر انتخاب کنید.</span></div></div>'; }
 function fillInsightSelect() { const select = $("#insight-dataset-select"); select.innerHTML = state.datasets.map((dataset) => `<option value="${escapeHtml(dataset.id)}" ${dataset.id === state.currentDatasetId ? "selected" : ""}>${escapeHtml(dataset.name)}</option>`).join(""); }
-async function renderInsightsPage() { fillInsightSelect(); const subtitle = $("#insights-subtitle"); if (!state.currentDetail) { subtitle.textContent = "دیتاستی را انتخاب کنید تا مهم‌ترین یافته‌ها نمایش داده شوند."; $("#insights-grid").innerHTML = '<div class="empty-state"><div class="empty-icon">✦</div><h3>هنوز داده‌ای برای تحلیل نیست</h3><p>یک دیتاست اضافه کنید تا بینش‌ها ساخته شوند.</p></div>'; return; } subtitle.textContent = `یافته‌های استخراج‌شده از «${state.currentDetail.name}»`; const target = $("#insights-grid"); target.innerHTML = state.currentInsights.length ? state.currentInsights.map((insight, index) => `<article class="insight-card ${insightClass(insight)}"><div class="insight-card-header"><span>${insightLabel(insight.type)}</span><span class="status-badge">${insight.severity === "warning" ? "نیازمند توجه" : "بررسی‌شده"}</span></div><p>${escapeHtml(insight.narrative)}</p>${insight.chart ? `<div class="insight-chart" id="insight-chart-${index}"></div>` : ""}</article>`).join("") : '<div class="empty-state"><div class="empty-icon">✓</div><h3>یافتهٔ خاصی شناسایی نشد</h3><p>این دیتاست فعلاً الگوی غیرعادی قابل‌توجهی ندارد.</p></div>'; state.currentInsights.forEach((insight, index) => { if (insight.chart) renderChart(insight.chart, $(`#insight-chart-${index}`)); }); }
-function renderDatasetsTable() { const query = ($( "#dataset-search")?.value || "").trim().toLowerCase(); const datasets = state.datasets.filter((dataset) => dataset.name.toLowerCase().includes(query)); $("#dataset-table-count").textContent = `${fa(datasets.length)} دیتاست`; $("#datasets-empty").classList.toggle("hidden", datasets.length > 0); $(".dataset-table").classList.toggle("hidden", datasets.length === 0); $("#datasets-table-body").innerHTML = datasets.map((dataset) => `<tr><td><div class="dataset-name">${escapeHtml(dataset.name)}</div><div class="dataset-meta">شناسه: ${escapeHtml(dataset.id.slice(0, 8))}</div></td><td>${fa(number(dataset.rows))}</td><td>${fa(number(dataset.columns.length))}</td><td>${escapeHtml(dataset.uploaded_at || "—")}</td><td><span class="status-badge">آماده تحلیل</span></td><td><button class="table-action" type="button" data-select-id="${escapeHtml(dataset.id)}">مشاهده</button></td></tr>`).join(""); $$("[data-select-id]").forEach((button) => button.addEventListener("click", () => { selectDataset(button.dataset.selectId); switchView("dashboard"); })); }
+async function renderInsightsPage() {
+  fillInsightSelect();
+  const subtitle = $("#insights-subtitle");
+  if (!state.currentDetail) {
+    subtitle.textContent = "دیتاستی را انتخاب کنید تا مهم‌ترین یافته‌ها نمایش داده شوند.";
+    $("#insights-grid").innerHTML = '<div class="empty-state"><div class="empty-icon">✦</div><h3>هنوز داده‌ای برای تحلیل نیست</h3><p>یک دیتاست اضافه کنید تا بینش‌ها ساخته شوند.</p></div>';
+    return;
+  }
+  subtitle.textContent = `یافته‌های استخراج‌شده از «${state.currentDetail.name}»`;
+  const target = $("#insights-grid");
+  if (!settings.autoInsights && !state.currentInsights.length) {
+    target.innerHTML = '<div class="empty-state"><div class="empty-icon">✦</div><h3>بینش خودکار خاموش است</h3><p>برای تحلیل این دیتاست، بینش‌ها را دستی بارگذاری کنید.</p><button class="primary-button" id="load-insights" type="button">بارگذاری بینش‌ها</button></div>';
+    $("#load-insights").addEventListener("click", () => loadInsights(state.currentDatasetId));
+    return;
+  }
+  target.innerHTML = state.currentInsights.length ? state.currentInsights.map((insight, index) => `<article class="insight-card ${insightClass(insight)}"><div class="insight-card-header"><span>${insightLabel(insight.type)}</span><span class="status-badge">${insight.severity === "warning" ? "نیازمند توجه" : "بررسی‌شده"}</span></div><p>${escapeHtml(insight.narrative)}</p>${insight.chart ? `<div class="insight-chart" id="insight-chart-${index}"></div>` : ""}</article>`).join("") : '<div class="empty-state"><div class="empty-icon">✓</div><h3>یافتهٔ خاصی شناسایی نشد</h3><p>این دیتاست فعلاً الگوی غیرعادی قابل‌توجهی ندارد.</p></div>';
+  state.currentInsights.forEach((insight, index) => { if (insight.chart) renderChart(insight.chart, $(`#insight-chart-${index}`)); });
+}
+function renderDatasetsTable() { const query = ($( "#dataset-search")?.value || "").trim().toLowerCase(); const datasets = state.datasets.filter((dataset) => dataset.name.toLowerCase().includes(query)); $("#dataset-table-count").textContent = `${fa(datasets.length)} دیتاست`; $("#datasets-empty").classList.toggle("hidden", datasets.length > 0); $(".dataset-table").classList.toggle("hidden", datasets.length === 0); $("#datasets-table-body").innerHTML = datasets.map((dataset) => `<tr><td><div class="dataset-name">${escapeHtml(dataset.name)}</div><div class="dataset-meta">شناسه: ${escapeHtml(dataset.id.slice(0, 8))}</div></td><td>${fa(number(dataset.rows))}</td><td>${fa(number(dataset.columns.length))}</td><td>${escapeHtml(formatDate(dataset.uploaded_at))}</td><td><span class="status-badge">آماده تحلیل</span></td><td><button class="table-action" type="button" data-select-id="${escapeHtml(dataset.id)}">مشاهده</button><button class="table-action danger" type="button" data-delete-id="${escapeHtml(dataset.id)}">حذف</button></td></tr>`).join(""); $$("[data-select-id]").forEach((button) => button.addEventListener("click", () => { selectDataset(button.dataset.selectId); switchView("dashboard"); })); $$("[data-delete-id]").forEach((button) => button.addEventListener("click", () => deleteDataset(button.dataset.deleteId))); }
 function renderEmptyState() { renderDashboard(); renderInsightsPage(); renderReport(); }
 function renderReport() { const target = $("#report-content"); const detail = state.currentDetail; if (!detail) { target.innerHTML = '<div class="panel empty-state"><div class="empty-icon">▥</div><h3>گزارشی برای نمایش نیست</h3><p>یک دیتاست را انتخاب کنید تا گزارش آن ساخته شود.</p></div>'; return; } target.innerHTML = `${truncationNotice(detail)}<div class="report-grid"><div class="report-card"><small>نام دیتاست</small><strong>${escapeHtml(detail.name)}</strong></div><div class="report-card"><small>تعداد سطر</small><strong>${fa(number(detail.rows))}</strong></div><div class="report-card"><small>ستون‌های عددی</small><strong>${fa(number(detail.numeric_columns.length))}</strong></div></div><div class="panel report-preview"><h3>پیش‌نمایش داده</h3><p class="muted-text">پنج سطر اول دیتاست برای بررسی سریع ساختار داده</p><div class="table-scroll">${detail.preview?.length ? renderTable(detail.preview) : '<div class="empty-state">پیش‌نمایشی وجود ندارد.</div>'}</div></div>`; }
 function renderTable(rows) { const columns = Object.keys(rows[0]); return `<table class="data-table"><thead><tr>${columns.map((column) => `<th>${escapeHtml(column)}</th>`).join("")}</tr></thead><tbody>${rows.map((row) => `<tr>${columns.map((column) => `<td>${escapeHtml(formatCell(row[column]))}</td>`).join("")}</tr>`).join("")}</tbody></table>`; }
 function formatCell(value) { return typeof value === "number" ? number(value) : String(value ?? "—"); }
 let chartCounter = 0;
-function renderChart(chart, target) { if (!target || typeof Chart === "undefined") return; const canvas = document.createElement("canvas"); target.appendChild(canvas); const colors = ["#635bdf", "#16b8a6", "#f59e0b", "#ef6a6a"]; new Chart(canvas.getContext("2d"), { type: chart.type === "line" ? "line" : "bar", data: { labels: chart.labels, datasets: chart.series.map((series, index) => ({ label: series.name, data: series.data, backgroundColor: chart.type === "line" ? "transparent" : colors[index % colors.length], borderColor: colors[index % colors.length], borderWidth: 2, tension: .3 })) }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: "#718096", font: { family: "Tahoma" } } } }, scales: { x: { ticks: { color: "#8995a8" }, grid: { color: "#eef0f5" } }, y: { ticks: { color: "#8995a8" }, grid: { color: "#eef0f5" } } } } }); chartCounter += 1; }
+function renderChart(chart, target) { if (!target || typeof Chart === "undefined") return; const canvas = document.createElement("canvas"); target.appendChild(canvas); const colors = ["#635bdf", "#16b8a6", "#f59e0b", "#ef6a6a"]; new Chart(canvas.getContext("2d"), { type: chart.type === "line" ? "line" : "bar", data: { labels: chart.labels, datasets: chart.series.map((series, index) => ({ label: series.name, data: series.data, backgroundColor: chart.type === "line" ? "transparent" : colors[index % colors.length], borderColor: colors[index % colors.length], borderWidth: 2, tension: .3 })) }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: "#718096", font: { family: "Vazirmatn" } } } }, scales: { x: { ticks: { color: "#8995a8" }, grid: { color: "#eef0f5" } }, y: { ticks: { color: "#8995a8" }, grid: { color: "#eef0f5" } } } } }); chartCounter += 1; }
 
 async function askQuestion(question) { if (!state.currentDatasetId) { showToast("ابتدا یک دیتاست اضافه کنید"); switchView("datasets"); return; } const form = $("#ask-form"); const input = $("#question-input"); input.disabled = true; $("#dashboard-chat").insertAdjacentHTML("beforeend", `<div class="msg user"><div class="bubble">${escapeHtml(question)}</div></div>`); try { const result = await api("/api/ask", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dataset_id: state.currentDatasetId, question }) }); const content = `<div class="msg bot"><div class="msg-content"><div class="bubble">${escapeHtml(result.answer)}</div>${result.table?.length ? `<div class="response-table">${renderTable(result.table)}</div>` : ""}${result.chart ? '<div class="chart-wrap" id="answer-chart"></div>' : ""}</div></div>`; $("#dashboard-chat").insertAdjacentHTML("beforeend", content); if (result.chart) renderChart(result.chart, $("#answer-chart")); } catch (error) { $("#dashboard-chat").insertAdjacentHTML("beforeend", `<div class="msg bot"><div class="bubble">${escapeHtml(error.message)}</div></div>`); } finally { input.disabled = false; input.focus(); form.reset(); } }
 async function uploadFile() { const file = el.file.files[0]; if (!file) return; el.status.textContent = "در حال بارگذاری…"; try { const formData = new FormData(); formData.append("file", file); const meta = await api("/api/datasets/upload", { method: "POST", body: formData }); el.status.textContent = `«${meta.name}» اضافه شد`; await loadDatasets(); await selectDataset(meta.id); showToast("دیتاست با موفقیت اضافه شد"); } catch (error) { el.status.textContent = error.message; el.status.className = "upload-status error"; } finally { el.file.value = ""; } }
@@ -126,4 +208,33 @@ $$('[data-question]').forEach((button) => button.addEventListener("click", () =>
 $("#dataset-search").addEventListener("input", renderDatasetsTable);
 $("#insight-dataset-select").addEventListener("change", (event) => selectDataset(event.target.value, false));
 $("#print-report").addEventListener("click", () => window.print());
+$("#alerts-button").addEventListener("click", () => {
+  const triggered = state.allAlerts.filter((alert) => alert.triggered);
+  if (!triggered.length) { showToast("هشدار فعالی وجود ندارد"); return; }
+  showToast(triggered.map((alert) => `${alert.name} (${alert.metric_col})`).join("، "));
+});
+
+function saveSettings() { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (error) { /* حالت خصوصی مرورگر: تنظیمات ذخیره نمی‌شود */ } }
+function applySettings() {
+  document.body.classList.toggle("reduce-motion", settings.reduceMotion);
+  const digits = $("#setting-persian-digits");
+  const auto = $("#setting-auto-insights");
+  const motion = $("#setting-reduce-motion");
+  if (digits) digits.checked = settings.persianDigits;
+  if (auto) auto.checked = settings.autoInsights;
+  if (motion) motion.checked = settings.reduceMotion;
+}
+function refreshNumbers() {
+  renderStats(); renderDatasetList(); renderDatasetsTable(); renderDashboard(); renderInsightsPage(); renderReport(); renderFeatureStatus();
+}
+function bindSettings() {
+  const digits = $("#setting-persian-digits");
+  const auto = $("#setting-auto-insights");
+  const motion = $("#setting-reduce-motion");
+  if (digits) digits.addEventListener("change", () => { settings.persianDigits = digits.checked; saveSettings(); refreshNumbers(); });
+  if (auto) auto.addEventListener("change", () => { settings.autoInsights = auto.checked; saveSettings(); if (auto.checked && state.currentDatasetId && !state.currentInsights.length) loadInsights(state.currentDatasetId); else renderInsightsPage(); });
+  if (motion) motion.addEventListener("change", () => { settings.reduceMotion = motion.checked; saveSettings(); applySettings(); });
+}
+applySettings();
+bindSettings();
 loadDatasets();
